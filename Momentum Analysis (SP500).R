@@ -87,7 +87,7 @@ Num_Years <- 6 # Years in the Chart
     scale_color_viridis_d(end = 0.9) +
     theme_minimal() +
     labs(title = "SP500 - Momentum Analysis (Percentage of companies above their Simple Moving Average)",
-         subtitle = str_glue("Above SMA50: {Last_MA_50}. Above SMA100: {Last_MA_100}. Above SMA200: {Last_MA_200}"),
+         subtitle = str_glue("Current Values - Above SMA50: {Last_MA_50}. Above SMA100: {Last_MA_100}. Above SMA200: {Last_MA_200}"),
          caption = "By: Carlos Jimenez\nSource: Yahoo Finance",
          y       = "Percentage of Companies",
          x       = "Dates") +
@@ -113,5 +113,3 @@ Num_Years <- 6 # Years in the Chart
     scale_y_continuous(labels = scales::percent) +
     theme(legend.position = "bottom",
           legend.title    = element_blank())
-
-
