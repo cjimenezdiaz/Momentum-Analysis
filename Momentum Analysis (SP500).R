@@ -1,83 +1,95 @@
 # Libraries
-library(quantmod)
-library(lubridate)
-library(TTR)
-library(ggplot2)
-library(reshape)
-library(dplyr)
 library(tidyquant)
-library(rvest)
-library(purrr)
-library(tidyr)
+library(tidyverse)
+library(scales)
 
 # Variables
-history <- 5 # Years of historical data
+history   <- 15 # Years of historical data
 
-# Access to the database with all the tickets in SP500
-SP500 <- "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies" %>%
-  read_html() %>%
-  html_nodes(xpath = '//*[@id="mw-content-text"]/div/table[1]') %>%
-  html_table() %>%
-  pluck(1)
-
-# Fixing some tickets to be downloaded from yahoo finance
-SP500[SP500$Symbol == "BRK.B", "Symbol"] <- "BRK-B"
-SP500[SP500$Symbol == "BF.B", "Symbol"]  <- "BF-B"
-
-# Download historical price data ("X" days) 
-mult_stocks <- tq_get(SP500$Symbol,
-                      get  = "stock.prices",
-                      from = Sys.Date() - years(history),
-                      to   = Sys.Date(),
-                      complete_cases = TRUE) %>%
-  select(symbol, date, adjusted) %>%
-  spread(key = symbol, value = adjusted) %>%
-  as.data.frame()
-
-# Remove the columns with NAs
-mult_stocks <- mult_stocks %>% select_if(~ !any(is.na(.)))
-
-# Moving Average Calculation
-SMA50  <- data.frame(matrix(data = 0, nrow = nrow(mult_stocks), ncol = ncol(mult_stocks) - 1))
-SMA100 <- data.frame(matrix(data = 0, nrow = nrow(mult_stocks), ncol = ncol(mult_stocks) - 1))
-SMA200 <- data.frame(matrix(data = 0, nrow = nrow(mult_stocks), ncol = ncol(mult_stocks) - 1))
-
-for(i in 2:ncol(mult_stocks)){ # i <- 1
+# Creating the DB with all the information that we need
+DB_Prices <- tq_index("SP500") %>% 
   
-  SMA50[,i]  <- ifelse(mult_stocks[,i] > SMA(mult_stocks[,i], n = 50), 1, 0)
-  SMA100[,i] <- ifelse(mult_stocks[,i] > SMA(mult_stocks[,i], n = 100), 1, 0)
-  SMA200[,i] <- ifelse(mult_stocks[,i] > SMA(mult_stocks[,i], n = 200), 1, 0)
-
-  print(paste("Progress... ", round(i/(ncol(mult_stocks) - 1)*100, digits = 2), "%", sep = ""))
-}
-
-# Results
-SMA50  <- rowSums(SMA50)/ncol(SMA50)
-SMA100 <- rowSums(SMA100)/ncol(SMA100)
-SMA200 <- rowSums(SMA200)/ncol(SMA200)
-
-# Create the final Data Base with all the info
-finalDDBB <- data.frame(SMA50, SMA100, SMA200) %>%
-  mutate(Dates = mult_stocks$date %>% as.Date(format = "%Y-%m-%d")) %>%
-  na.omit() %>%
-  `colnames<-`(c("Above SMA 50", "Above SMA 100", "Above SMA 200", "Dates")) %>%
-  melt(id = "Dates") %>%
-  `colnames<-`(c("Dates", "Momentum", "Value")) %>%
-  mutate(Value = round(Value*100, digits = 2))
-
-# Plot
-LastDate    <- finalDDBB$Dates[nrow(finalDDBB)]
-LastValues  <- finalDDBB[finalDDBB$Dates == LastDate, ]
+  # Fixing some symbols for Yahoo Finance
+  dplyr::mutate(symbol = ifelse(symbol == "BRK.B", "BRK-B",
+                                ifelse(symbol == "BF.B", "BF-B", symbol))) %>%
+  dplyr::select(symbol) %>%
+  pull(1) %>%
+  tq_get(get  = "stock.prices",
+         from = Sys.Date() - years(history),
+         to   = Sys.Date(),
+         complete_cases = TRUE) %>%
+  dplyr::select(symbol, date, adjusted) %>%
+  dplyr::group_by(symbol) %>%
+  dplyr::mutate(MA_50  = ifelse(adjusted > TTR::SMA(adjusted, n = 50), 1, 0),
+                MA_100 = ifelse(adjusted > TTR::SMA(adjusted, n = 100), 1, 0),
+                MA_200 = ifelse(adjusted > TTR::SMA(adjusted, n = 200), 1, 0)) %>%
+  dplyr::ungroup() %>%
+  drop_na()
 
 
-ggplot(data=finalDDBB, aes(x = Dates, y = Value/100, colour = Momentum)) +
-  geom_line(size = 1) +
-  scale_color_viridis_d(end = 0.9)+
-  theme_minimal() +
-  labs(title = "SP500 - Momentum Analysis (Percentage of companies above their Simple Moving Average)",
-       subtitle = paste("Above SMA50: ", LastValues$Value[1], "%. Above SMA100: ", LastValues$Value[2], "%.Above SMA200: ", LastValues$Value[3], "%", sep = ""),
-       caption = "By: Carlos Jimenez (@cjimenezdiaz)\nSource: Yahoo Finance",
-       y = "Percentage of Companies",
-       x = "Dates") +
-  scale_y_continuous(labels = scales::percent) +
-  theme(legend.position="bottom")
+# Splitting the dataframes into the types of Moving Average
+DB_MA_50 <- DB_Prices %>%
+  dplyr::select(date, MA_50) %>%
+  dplyr::group_by(date) %>%
+  dplyr::summarise(Pct_MA_50 = sum(MA_50)/n()) 
+
+DB_MA_100 <- DB_Prices %>%
+  dplyr::select(date, MA_100) %>%
+  dplyr::group_by(date) %>%
+  dplyr::summarise(Pct_MA_100 = sum(MA_100)/n()) 
+
+DB_MA_200 <- DB_Prices %>%
+  dplyr::select(date, MA_200) %>%
+  dplyr::group_by(date) %>%
+  dplyr::summarise(Pct_MA_200 = sum(MA_200)/n()) 
+
+
+# Joining everything together
+DB_Global <- DB_MA_50 %>%
+  left_join(DB_MA_100, by = "date") %>%
+  left_join(DB_MA_200, by = "date") %>%
+  pivot_longer(!date, names_to = "Type", values_to = "Percentage")
+
+
+# Plotting
+Last_MA_50 <- DB_Global %>% 
+  dplyr::filter(Type == "Pct_MA_50") %>% 
+  tail(n = 1) %>%
+  dplyr::select(Percentage) %>%
+  pull(1) %>%
+  percent(accuracy = 0.01)
+
+Last_MA_100 <- DB_Global %>% 
+  dplyr::filter(Type == "Pct_MA_100") %>% 
+  tail(n = 1) %>%
+  dplyr::select(Percentage) %>%
+  pull(1) %>%
+  percent(accuracy = 0.01)
+
+Last_MA_200 <- DB_Global %>% 
+  dplyr::filter(Type == "Pct_MA_200") %>% 
+  tail(n = 1) %>%
+  dplyr::select(Percentage) %>%
+  pull(1) %>%
+  percent(accuracy = 0.01)
+
+
+Num_Years <- 5 # Years in the Chart
+
+DB_Global %>%
+  dplyr::filter(date %>% lubridate::year() >= (Sys.Date() %>% lubridate::year()) - Num_Years) %>%
+  dplyr::mutate(Type = ifelse(Type == "Pct_MA_50", "Above 50 SMA",
+                              ifelse(Type == "Pct_MA_100", "Above 100 SMA", "Above 200 SMA"))) %>%
+  ggplot(aes(x = date, y = Percentage, colour = Type)) +
+    geom_line(size = 1) +
+    scale_color_viridis_d(end = 0.9) +
+    theme_minimal() +
+    labs(title = "SP500 - Momentum Analysis (Percentage of companies above their Simple Moving Average)",
+         subtitle = str_glue("Above SMA50: {Last_MA_50}. Above SMA100: {Last_MA_100}. Above SMA200: {Last_MA_200}"),
+         caption = "By: Carlos Jimenez\nSource: Yahoo Finance",
+         y       = "Percentage of Companies",
+         x       = "Dates") +
+    scale_y_continuous(labels = scales::percent) +
+    theme(legend.position = "bottom",
+          legend.title    = element_blank())
+
