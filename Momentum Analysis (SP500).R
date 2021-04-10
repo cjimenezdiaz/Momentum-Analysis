@@ -74,22 +74,23 @@ Last_MA_200 <- DB_Global %>%
   percent(accuracy = 0.01)
 
 
-Num_Years <- 5 # Years in the Chart
+Num_Years <- 10 # Years in the Chart
 
 DB_Global %>%
   dplyr::filter(date %>% lubridate::year() >= (Sys.Date() %>% lubridate::year()) - Num_Years) %>%
   dplyr::mutate(Type = ifelse(Type == "Pct_MA_50", "Above 50 SMA",
                               ifelse(Type == "Pct_MA_100", "Above 100 SMA", "Above 200 SMA"))) %>%
   ggplot(aes(x = date, y = Percentage, colour = Type)) +
-    geom_line(size = 1) +
-    scale_color_viridis_d(end = 0.9) +
-    theme_minimal() +
-    labs(title = "SP500 - Momentum Analysis (Percentage of companies above their Simple Moving Average)",
-         subtitle = str_glue("Above SMA50: {Last_MA_50}. Above SMA100: {Last_MA_100}. Above SMA200: {Last_MA_200}"),
-         caption = "By: Carlos Jimenez\nSource: Yahoo Finance",
-         y       = "Percentage of Companies",
-         x       = "Dates") +
-    scale_y_continuous(labels = scales::percent) +
-    theme(legend.position = "bottom",
-          legend.title    = element_blank())
+  geom_line(size = 1) +
+  scale_color_viridis_d(end = 0.9) +
+  theme_minimal() +
+  labs(title = "SP500 - Momentum Analysis (Percentage of companies above their Simple Moving Average)",
+       subtitle = str_glue("Above SMA50: {Last_MA_50}. Above SMA100: {Last_MA_100}. Above SMA200: {Last_MA_200}"),
+       caption = "By: Carlos Jimenez\nSource: Yahoo Finance",
+       y       = "Percentage of Companies",
+       x       = "Dates") +
+  scale_y_continuous(labels = scales::percent) +
+  theme(legend.position = "bottom",
+        legend.title    = element_blank()) +
+  facet_wrap( ~ Type,  ncol = 3, strip.position = "left")
 
