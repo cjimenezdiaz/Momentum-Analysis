@@ -75,7 +75,7 @@ Last_MA_200 <- DB_Global %>%
 
 
 # Plotting
-Num_Years <- 10 # Years in the Chart
+Num_Years <- 6 # Years in the Chart
 
   # Using Facets
   DB_Global %>%
